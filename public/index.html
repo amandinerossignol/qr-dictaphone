@@ -1,1 +1,526 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Dictaphone QR</title>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #22222f;
+      --accent: #7c6aff;
+      --accent2: #ff6a8a;
+      --text: #f0f0f8;
+      --muted: #888899;
+      --radius: 20px;
+    }
 
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 36px 28px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 8px 40px rgba(0,0,0,.5);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .slot-label {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── Waveform ── */
+    .waveform-wrap {
+      width: 100%;
+      height: 64px;
+      margin: 0 auto 28px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas#wave {
+      width: 100%;
+      height: 64px;
+      border-radius: 12px;
+      background: var(--surface2);
+    }
+
+    .timer {
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      margin-bottom: 28px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Big button ── */
+    .btn-main {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      transition: transform .15s, box-shadow .15s;
+      position: relative;
+      outline: none;
+    }
+    .btn-main:active { transform: scale(.93); }
+    .btn-main.record {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 0 0 0 rgba(124,106,255,.4);
+      animation: pulse 2s infinite;
+    }
+    .btn-main.stop {
+      background: var(--accent2);
+      animation: none;
+      box-shadow: 0 6px 24px rgba(255,106,138,.4);
+    }
+    .btn-main.play {
+      background: linear-gradient(135deg, #2bd67e, #1ab5c0);
+      box-shadow: 0 6px 24px rgba(43,214,126,.3);
+      animation: none;
+    }
+    .btn-main svg { width: 36px; height: 36px; fill: white; }
+
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(124,106,255,.5); }
+      70%  { box-shadow: 0 0 0 18px rgba(124,106,255,0); }
+      100% { box-shadow: 0 0 0 0 rgba(124,106,255,0); }
+    }
+
+    .btn-label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+
+    .status-msg {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+      min-height: 42px;
+    }
+
+    /* ── Uploading spinner ── */
+    .spinner {
+      width: 48px; height: 48px;
+      border: 4px solid rgba(255,255,255,.1);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error ── */
+    .error-box {
+      background: rgba(255,80,80,.12);
+      border: 1px solid rgba(255,80,80,.3);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 14px;
+      color: #ff8080;
+    }
+
+    audio { display: none; }
+
+    .send-btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: white;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .send-btn:hover { opacity: .88; }
+    .send-btn:disabled { opacity: .4; cursor: default; }
+  </style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="slot-label" id="slotLabel">Chargement…</div>
+  <h1 id="pageTitle">Dictaphone</h1>
+  <div id="appContent">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const API = ""; // même origine (Glitch)
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let slotId = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordedBlob = null;
+let timerInterval = null;
+let seconds = 0;
+let analyser = null;
+let animFrame = null;
+let stream = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  const params = new URLSearchParams(location.search);
+  slotId = params.get("slot");
+
+  if (!slotId) {
+    showError("Aucun identifiant de slot dans l'URL.<br>Scannez un QR code valide.");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/slot/${slotId}`);
+    if (!res.ok) throw new Error("Slot introuvable");
+    const slot = await res.json();
+
+    document.getElementById("slotLabel").textContent = slot.label;
+    document.getElementById("pageTitle").textContent = slot.label;
+
+    if (slot.state === "recorded" && slot.audioUrl) {
+      showPlayer(slot.audioUrl);
+    } else {
+      showRecorder();
+    }
+  } catch (e) {
+    showError("Impossible de contacter le serveur.<br>" + e.message);
+  }
+})();
+
+// ── Vues ──────────────────────────────────────────────────────────────────────
+function showError(msg) {
+  document.getElementById("slotLabel").textContent = "Erreur";
+  document.getElementById("pageTitle").textContent = "⚠️";
+  document.getElementById("appContent").innerHTML =
+    `<div class="error-box">${msg}</div>`;
+}
+
+function showPlayer(url) {
+  document.getElementById("pageTitle").textContent = "Message";
+  const el = document.getElementById("appContent");
+  el.innerHTML = `
+    <div class="waveform-wrap">
+      <canvas id="wave"></canvas>
+    </div>
+    <div class="timer" id="timer">0:00</div>
+    <button class="btn-main play" id="btnPlay" onclick="togglePlay()">
+      ${iconPlay()}
+    </button>
+    <div class="btn-label" id="playLabel">Appuyer pour écouter</div>
+    <div class="status-msg">🎧 Un message vous attend</div>
+    <audio id="audioEl" src="${url}"></audio>
+  `;
+  setupPlayerWave();
+}
+
+function showRecorder() {
+  document.getElementById("pageTitle").textContent = "Enregistrer";
+  const el = document.getElementById("appContent");
+  el.innerHTML = `
+    <div class="waveform-wrap">
+      <canvas id="wave"></canvas>
+    </div>
+    <div class="timer" id="timer">0:00</div>
+    <button class="btn-main record" id="btnRec" onclick="startRecording()">
+      ${iconMic()}
+    </button>
+    <div class="btn-label">Appuyer pour enregistrer</div>
+    <div class="status-msg" id="statusMsg">Vous êtes le premier !<br>Laissez un message pour les suivants.</div>
+  `;
+  // dessin idle
+  idleWave();
+}
+
+function showPreview(blob) {
+  const url = URL.createObjectURL(blob);
+  const el = document.getElementById("appContent");
+  el.innerHTML = `
+    <div class="waveform-wrap">
+      <canvas id="wave"></canvas>
+    </div>
+    <div class="timer" id="timer">0:00</div>
+    <button class="btn-main play" id="btnPlay" onclick="togglePlay()">
+      ${iconPlay()}
+    </button>
+    <div class="btn-label" id="playLabel">Réécouter</div>
+    <audio id="audioEl" src="${url}"></audio>
+    <button class="send-btn" id="sendBtn" onclick="sendAudio()">
+      ✉️ Envoyer ce message
+    </button>
+    <div class="status-msg" style="margin-top:12px" id="statusMsg"></div>
+  `;
+  setupPlayerWave();
+}
+
+function showUploading() {
+  document.getElementById("appContent").innerHTML = `
+    <div class="spinner"></div>
+    <div class="status-msg">Envoi en cours…</div>
+  `;
+}
+
+function showSuccess() {
+  document.getElementById("appContent").innerHTML = `
+    <div style="font-size:64px;margin-bottom:16px">✅</div>
+    <div class="status-msg">Message enregistré !<br>Les prochains scanners pourront l'écouter.</div>
+  `;
+}
+
+// ── Enregistrement ────────────────────────────────────────────────────────────
+async function startRecording() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    showError("Accès au micro refusé.<br>Autorisez le micro dans votre navigateur.");
+    return;
+  }
+
+  audioChunks = [];
+  const mimeType = MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+    ? "audio/ogg;codecs=opus"
+    : "audio/webm;codecs=opus";
+
+  mediaRecorder = new MediaRecorder(stream, { mimeType });
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recordedBlob = new Blob(audioChunks, { type: mimeType });
+    stopStream();
+    showPreview(recordedBlob);
+  };
+  mediaRecorder.start(100);
+
+  // UI → stop
+  document.getElementById("btnRec").className = "btn-main stop";
+  document.getElementById("btnRec").innerHTML = iconStop();
+  document.getElementById("btnRec").onclick = stopRecording;
+  document.querySelector(".btn-label").textContent = "Appuyer pour arrêter";
+
+  startTimer();
+  setupRecorderWave(stream);
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  stopTimer();
+  cancelAnimationFrame(animFrame);
+}
+
+function stopStream() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+// ── Lecture ───────────────────────────────────────────────────────────────────
+let isPlaying = false;
+let audioCtxPlayer = null;
+let sourcePlayer = null;
+
+function togglePlay() {
+  const audio = document.getElementById("audioEl");
+  if (!audio) return;
+  if (isPlaying) {
+    audio.pause();
+    isPlaying = false;
+    document.getElementById("btnPlay").innerHTML = iconPlay();
+    document.getElementById("playLabel").textContent = "Appuyer pour écouter";
+    cancelAnimationFrame(animFrame);
+    idleWave();
+  } else {
+    audio.play();
+    isPlaying = true;
+    document.getElementById("btnPlay").innerHTML = iconStop();
+    document.getElementById("playLabel").textContent = "En cours…";
+    trackPlayerTime(audio);
+    setupPlayerWaveFromElement(audio);
+  }
+  audio.onended = () => {
+    isPlaying = false;
+    document.getElementById("btnPlay").innerHTML = iconPlay();
+    document.getElementById("playLabel").textContent = "Réécouter";
+    cancelAnimationFrame(animFrame);
+    idleWave();
+  };
+}
+
+function trackPlayerTime(audio) {
+  const update = () => {
+    if (!isPlaying) return;
+    updateTimerDisplay(Math.floor(audio.currentTime));
+    requestAnimationFrame(update);
+  };
+  requestAnimationFrame(update);
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+async function sendAudio() {
+  if (!recordedBlob) return;
+  document.getElementById("sendBtn").disabled = true;
+  showUploading();
+
+  const form = new FormData();
+  form.append("audio", recordedBlob, "message.webm");
+
+  try {
+    const res = await fetch(`${API}/api/slot/${slotId}/record`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur serveur");
+    showSuccess();
+  } catch (e) {
+    showRecorder();
+    document.getElementById("statusMsg").textContent = "Erreur : " + e.message;
+  }
+}
+
+// ── Timer ─────────────────────────────────────────────────────────────────────
+function startTimer() {
+  seconds = 0;
+  timerInterval = setInterval(() => {
+    seconds++;
+    updateTimerDisplay(seconds);
+    if (seconds >= 120) stopRecording(); // 2 min max
+  }, 1000);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+}
+
+function updateTimerDisplay(s) {
+  const m = Math.floor(s / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  const el = document.getElementById("timer");
+  if (el) el.textContent = `${m}:${ss}`;
+}
+
+// ── Waveform canvas ───────────────────────────────────────────────────────────
+function getCanvas() {
+  return document.getElementById("wave");
+}
+
+function idleWave() {
+  const cv = getCanvas();
+  if (!cv) return;
+  const ctx = cv.getContext("2d");
+  cv.width = cv.offsetWidth * devicePixelRatio;
+  cv.height = cv.offsetHeight * devicePixelRatio;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "rgba(124,106,255,.25)";
+  const bars = 40;
+  const bw = cv.width / bars * .6;
+  const gap = cv.width / bars * .4;
+  for (let i = 0; i < bars; i++) {
+    const h = 6 + Math.random() * 10;
+    ctx.fillRect(i * (bw + gap), (cv.height - h) / 2, bw, h);
+  }
+}
+
+function setupRecorderWave(stream) {
+  const ac = new AudioContext();
+  const src = ac.createMediaStreamSource(stream);
+  analyser = ac.createAnalyser();
+  analyser.fftSize = 128;
+  src.connect(analyser);
+  drawLiveWave(analyser, true);
+}
+
+function setupPlayerWave() {
+  idleWave();
+}
+
+function setupPlayerWaveFromElement(audio) {
+  if (!audioCtxPlayer) {
+    audioCtxPlayer = new AudioContext();
+    const src = audioCtxPlayer.createMediaElementSource(audio);
+    analyser = audioCtxPlayer.createAnalyser();
+    analyser.fftSize = 128;
+    src.connect(analyser);
+    analyser.connect(audioCtxPlayer.destination);
+  }
+  drawLiveWave(analyser, false);
+}
+
+function drawLiveWave(analyser, isRec) {
+  const cv = getCanvas();
+  if (!cv) return;
+  const ctx = cv.getContext("2d");
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  const color = isRec ? "#7c6aff" : "#2bd67e";
+
+  function draw() {
+    animFrame = requestAnimationFrame(draw);
+    if (!getCanvas()) { cancelAnimationFrame(animFrame); return; }
+    cv.width = cv.offsetWidth * devicePixelRatio;
+    cv.height = cv.offsetHeight * devicePixelRatio;
+    analyser.getByteFrequencyData(data);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const bars = data.length;
+    const bw = cv.width / bars * .7;
+    const gap = cv.width / bars * .3;
+    ctx.fillStyle = color;
+    for (let i = 0; i < bars; i++) {
+      const h = Math.max(4, (data[i] / 255) * cv.height * .85);
+      ctx.globalAlpha = .7 + .3 * (data[i] / 255);
+      ctx.fillRect(i * (bw + gap), (cv.height - h) / 2, bw, h);
+    }
+    ctx.globalAlpha = 1;
+  }
+  draw();
+}
+
+// ── Icônes SVG inline ─────────────────────────────────────────────────────────
+function iconMic() {
+  return `<svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 18.93V22h2v-2.07A8 8 0 0 0 20 12h-2a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93z"/></svg>`;
+}
+function iconStop() {
+  return `<svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
+}
+function iconPlay() {
+  return `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
+}
+</script>
+</body>
+</html>

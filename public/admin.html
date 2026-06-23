@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — QR Dictaphone</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #22222f;
+      --accent: #7c6aff;
+      --accent2: #ff6a8a;
+      --green: #2bd67e;
+      --text: #f0f0f8;
+      --muted: #888899;
+      --danger: #ff5050;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      max-width: 900px;
+      margin: 0 auto 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      flex: 1;
+    }
+
+    .auth-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type="password"], input[type="text"] {
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input:focus { border-color: var(--accent); }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-green   { background: var(--green); color: #0f1a12; }
+    .btn-danger  { background: var(--danger); color: white; }
+    .btn-muted   { background: var(--surface2); color: var(--muted); }
+
+    /* ── Create form ── */
+    .create-bar {
+      max-width: 900px;
+      margin: 0 auto 24px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .create-bar input { flex: 1; min-width: 180px; }
+    .create-bar label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+    /* ── Grid ── */
+    .slots-grid {
+      max-width: 900px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
+    }
+
+    .slot-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      border: 1px solid rgba(255,255,255,.06);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .slot-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .slot-name {
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .slot-id {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: monospace;
+      margin-top: 2px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .badge-empty    { background: rgba(136,136,153,.2); color: var(--muted); }
+    .badge-recorded { background: rgba(43,214,126,.15); color: var(--green); }
+
+    .qr-wrap {
+      background: white;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .qr-wrap canvas, .qr-wrap img { display: block; }
+
+    .slot-url {
+      font-size: 10px;
+      color: var(--muted);
+      word-break: break-all;
+      font-family: monospace;
+    }
+
+    .slot-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .recorded-at {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Print ── */
+    @media print {
+      body { background: white; color: black; padding: 0; }
+      header, .create-bar, .auth-bar, .slot-actions { display: none !important; }
+      .slots-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        max-width: 100%;
+      }
+      .slot-card {
+        border: 1px solid #ccc;
+        background: white;
+        color: black;
+        page-break-inside: avoid;
+      }
+      .slot-name { color: black; }
+      .slot-id, .slot-url, .recorded-at { color: #666; }
+      .badge { border: 1px solid #ccc; color: #333; }
+      .qr-wrap { border: 1px solid #eee; }
+    }
+
+    /* ── Login screen ── */
+    #loginScreen {
+      max-width: 360px;
+      margin: 80px auto;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 32px;
+      text-align: center;
+    }
+    #loginScreen h2 { margin-bottom: 20px; font-size: 20px; }
+    #loginScreen input { width: 100%; margin-bottom: 12px; padding: 12px; }
+    #loginScreen .btn { width: 100%; padding: 12px; font-size: 15px; }
+    .err-msg { color: #ff8080; font-size: 13px; margin-top: 8px; }
+
+    #mainContent { display: none; }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 48px 24px;
+      grid-column: 1 / -1;
+    }
+    .empty-state div { font-size: 40px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <h2>🎙️ Admin Dictaphone</h2>
+  <input type="password" id="pwdInput" placeholder="Mot de passe admin" onkeydown="if(event.key==='Enter')login()" />
+  <button class="btn btn-primary" onclick="login()">Connexion</button>
+  <div class="err-msg" id="loginErr"></div>
+</div>
+
+<!-- MAIN -->
+<div id="mainContent">
+  <header>
+    <h1>🎙️ QR Dictaphone — Admin</h1>
+    <div class="auth-bar">
+      <button class="btn btn-muted" onclick="window.print()">🖨️ Imprimer</button>
+      <button class="btn btn-muted" onclick="logout()">Déconnexion</button>
+    </div>
+  </header>
+
+  <div class="create-bar">
+    <label>Nouveau slot :</label>
+    <input type="text" id="newLabel" placeholder="ex: Table 4, Chambre 12…" onkeydown="if(event.key==='Enter')createSlot()" />
+    <button class="btn btn-primary" onclick="createSlot()">➕ Créer</button>
+    <button class="btn btn-muted" onclick="loadSlots()">🔄 Actualiser</button>
+  </div>
+
+  <div class="slots-grid" id="slotsGrid">
+    <div class="empty-state"><div>📭</div>Aucun slot créé</div>
+  </div>
+</div>
+
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────────
+let adminPwd = "";
+
+function login() {
+  adminPwd = document.getElementById("pwdInput").value;
+  if (!adminPwd) return;
+  // test rapide
+  fetch("/api/admin/slots", { headers: { "x-admin-password": adminPwd } })
+    .then(r => {
+      if (r.ok) {
+        document.getElementById("loginScreen").style.display = "none";
+        document.getElementById("mainContent").style.display = "block";
+        loadSlots();
+      } else {
+        document.getElementById("loginErr").textContent = "Mot de passe incorrect";
+      }
+    })
+    .catch(() => {
+      document.getElementById("loginErr").textContent = "Erreur de connexion";
+    });
+}
+
+function logout() {
+  adminPwd = "";
+  document.getElementById("loginScreen").style.display = "block";
+  document.getElementById("mainContent").style.display = "none";
+  document.getElementById("pwdInput").value = "";
+}
+
+// ── Slots ─────────────────────────────────────────────────────────────────────
+const BASE_URL = location.origin; // ex: https://mon-projet.glitch.me
+
+async function loadSlots() {
+  const res = await fetch("/api/admin/slots", {
+    headers: { "x-admin-password": adminPwd },
+  });
+  const slots = await res.json();
+  renderSlots(slots);
+}
+
+async function createSlot() {
+  const label = document.getElementById("newLabel").value.trim();
+  if (!label) return;
+  await fetch("/api/admin/slots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-password": adminPwd },
+    body: JSON.stringify({ label }),
+  });
+  document.getElementById("newLabel").value = "";
+  loadSlots();
+}
+
+async function resetSlot(id) {
+  if (!confirm("Effacer l'audio de ce slot ?")) return;
+  await fetch(`/api/admin/slots/${id}/audio`, {
+    method: "DELETE",
+    headers: { "x-admin-password": adminPwd },
+  });
+  loadSlots();
+}
+
+async function deleteSlot(id) {
+  if (!confirm("Supprimer ce slot définitivement ?")) return;
+  await fetch(`/api/admin/slots/${id}`, {
+    method: "DELETE",
+    headers: { "x-admin-password": adminPwd },
+  });
+  loadSlots();
+}
+
+function renderSlots(slots) {
+  const grid = document.getElementById("slotsGrid");
+  if (!slots.length) {
+    grid.innerHTML = `<div class="empty-state"><div>📭</div>Aucun slot créé.<br>Créez-en un ci-dessus.</div>`;
+    return;
+  }
+
+  grid.innerHTML = "";
+  slots.forEach(slot => {
+    const slotUrl = `${BASE_URL}/?slot=${slot.id}`;
+    const hasAudio = !!slot.audio_path;
+    const card = document.createElement("div");
+    card.className = "slot-card";
+    card.id = `card-${slot.id}`;
+    card.innerHTML = `
+      <div class="slot-card-top">
+        <div>
+          <div class="slot-name">${escHtml(slot.label)}</div>
+          <div class="slot-id">ID : ${slot.id}</div>
+        </div>
+        <span class="badge ${hasAudio ? "badge-recorded" : "badge-empty"}">
+          ${hasAudio ? "✅ Enregistré" : "⬜ Vide"}
+        </span>
+      </div>
+      <div class="qr-wrap" id="qr-${slot.id}"></div>
+      <div class="slot-url">${slotUrl}</div>
+      ${hasAudio && slot.recorded_at
+        ? `<div class="recorded-at">Enregistré le ${new Date(slot.recorded_at).toLocaleString("fr-FR")}</div>`
+        : ""}
+      <div class="slot-actions">
+        <button class="btn btn-muted" onclick="copyUrl('${slotUrl}')">📋 Copier URL</button>
+        ${hasAudio
+          ? `<button class="btn btn-muted" onclick="resetSlot('${slot.id}')">🔄 Réinitialiser</button>`
+          : ""}
+        <button class="btn btn-danger" onclick="deleteSlot('${slot.id}')">🗑️ Supprimer</button>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    // Générer le QR code
+    new QRCode(document.getElementById(`qr-${slot.id}`), {
+      text: slotUrl,
+      width: 180,
+      height: 180,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  });
+}
+
+function copyUrl(url) {
+  navigator.clipboard.writeText(url).then(() => alert("URL copiée !"));
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+</script>
+</body>
+</html>
