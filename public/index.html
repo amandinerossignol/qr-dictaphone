@@ -60,7 +60,6 @@
       background-clip: text;
     }
 
-    /* ── Waveform ── */
     .waveform-wrap {
       width: 100%;
       height: 64px;
@@ -86,7 +85,6 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* ── Big button ── */
     .btn-main {
       width: 96px;
       height: 96px;
@@ -138,7 +136,6 @@
       min-height: 42px;
     }
 
-    /* ── Uploading spinner ── */
     .spinner {
       width: 48px; height: 48px;
       border: 4px solid rgba(255,255,255,.1);
@@ -149,7 +146,6 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Error ── */
     .error-box {
       background: rgba(255,80,80,.12);
       border: 1px solid rgba(255,80,80,.3);
@@ -187,10 +183,8 @@
 </div>
 
 <script>
-// ── Config ────────────────────────────────────────────────────────────────────
-const API = ""; // même origine (Glitch)
+const API = "";
 
-// ── State ─────────────────────────────────────────────────────────────────────
 let slotId = null;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -200,8 +194,23 @@ let seconds = 0;
 let analyser = null;
 let animFrame = null;
 let stream = null;
+let recordedMimeType = null;
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+function getBestMimeType() {
+  const types = [
+    "audio/mp4",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  for (const type of types) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return "";
+}
+
 (async () => {
   const params = new URLSearchParams(location.search);
   slotId = params.get("slot");
@@ -220,7 +229,7 @@ let stream = null;
     document.getElementById("pageTitle").textContent = slot.label;
 
     if (slot.state === "recorded" && slot.audioUrl) {
-      showPlayer(slot.audioUrl);
+      showPlayer(slot.audioUrl, slot.mimeType);
     } else {
       showRecorder();
     }
@@ -229,7 +238,6 @@ let stream = null;
   }
 })();
 
-// ── Vues ──────────────────────────────────────────────────────────────────────
 function showError(msg) {
   document.getElementById("slotLabel").textContent = "Erreur";
   document.getElementById("pageTitle").textContent = "⚠️";
@@ -237,9 +245,12 @@ function showError(msg) {
     `<div class="error-box">${msg}</div>`;
 }
 
-function showPlayer(url) {
+function showPlayer(url, mimeType) {
   document.getElementById("pageTitle").textContent = "Message";
   const el = document.getElementById("appContent");
+  const sourceTag = mimeType
+    ? `<source src="${url}" type="${mimeType}"><source src="${url}">`
+    : `<source src="${url}">`;
   el.innerHTML = `
     <div class="waveform-wrap">
       <canvas id="wave"></canvas>
@@ -250,9 +261,9 @@ function showPlayer(url) {
     </button>
     <div class="btn-label" id="playLabel">Appuyer pour écouter</div>
     <div class="status-msg">🎧 Un message vous attend</div>
-    <audio id="audioEl" src="${url}"></audio>
+    <audio id="audioEl" preload="auto">${sourceTag}</audio>
   `;
-  setupPlayerWave();
+  idleWave();
 }
 
 function showRecorder() {
@@ -269,7 +280,6 @@ function showRecorder() {
     <div class="btn-label">Appuyer pour enregistrer</div>
     <div class="status-msg" id="statusMsg">Vous êtes le premier !<br>Laissez un message pour les suivants.</div>
   `;
-  // dessin idle
   idleWave();
 }
 
@@ -285,13 +295,13 @@ function showPreview(blob) {
       ${iconPlay()}
     </button>
     <div class="btn-label" id="playLabel">Réécouter</div>
-    <audio id="audioEl" src="${url}"></audio>
+    <audio id="audioEl" preload="auto"><source src="${url}" type="${blob.type}"><source src="${url}"></audio>
     <button class="send-btn" id="sendBtn" onclick="sendAudio()">
       ✉️ Envoyer ce message
     </button>
     <div class="status-msg" style="margin-top:12px" id="statusMsg"></div>
   `;
-  setupPlayerWave();
+  idleWave();
 }
 
 function showUploading() {
@@ -308,7 +318,6 @@ function showSuccess() {
   `;
 }
 
-// ── Enregistrement ────────────────────────────────────────────────────────────
 async function startRecording() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -318,22 +327,19 @@ async function startRecording() {
   }
 
   audioChunks = [];
-  const mimeType = MediaRecorder.isTypeSupported("audio/mp4")
-    ? "audio/mp4"
-    : MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-    ? "audio/webm;codecs=opus"
-    : "audio/ogg;codecs=opus";
+  recordedMimeType = getBestMimeType();
+  const options = recordedMimeType ? { mimeType: recordedMimeType } : {};
+  mediaRecorder = new MediaRecorder(stream, options);
+  recordedMimeType = mediaRecorder.mimeType;
 
-  mediaRecorder = new MediaRecorder(stream, { mimeType });
   mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
   mediaRecorder.onstop = () => {
-    recordedBlob = new Blob(audioChunks, { type: mimeType });
+    recordedBlob = new Blob(audioChunks, { type: recordedMimeType });
     stopStream();
     showPreview(recordedBlob);
   };
   mediaRecorder.start(100);
 
-  // UI → stop
   document.getElementById("btnRec").className = "btn-main stop";
   document.getElementById("btnRec").innerHTML = iconStop();
   document.getElementById("btnRec").onclick = stopRecording;
@@ -353,14 +359,12 @@ function stopStream() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
 }
 
-// ── Lecture ───────────────────────────────────────────────────────────────────
 let isPlaying = false;
-let audioCtxPlayer = null;
-let sourcePlayer = null;
 
 function togglePlay() {
   const audio = document.getElementById("audioEl");
   if (!audio) return;
+
   if (isPlaying) {
     audio.pause();
     isPlaying = false;
@@ -369,17 +373,25 @@ function togglePlay() {
     cancelAnimationFrame(animFrame);
     idleWave();
   } else {
-    audio.play();
+    audio.load();
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(e => {
+        console.error("Erreur lecture:", e);
+        document.getElementById("playLabel").textContent = "Erreur — réessayez";
+      });
+    }
     isPlaying = true;
     document.getElementById("btnPlay").innerHTML = iconStop();
     document.getElementById("playLabel").textContent = "En cours…";
     trackPlayerTime(audio);
-    setupPlayerWaveFromElement(audio);
   }
+
   audio.onended = () => {
     isPlaying = false;
     document.getElementById("btnPlay").innerHTML = iconPlay();
-    document.getElementById("playLabel").textContent = "Réécouter";
+    const lbl = document.getElementById("playLabel");
+    if (lbl) lbl.textContent = "Réécouter";
     cancelAnimationFrame(animFrame);
     idleWave();
   };
@@ -394,14 +406,17 @@ function trackPlayerTime(audio) {
   requestAnimationFrame(update);
 }
 
-// ── Upload ────────────────────────────────────────────────────────────────────
 async function sendAudio() {
   if (!recordedBlob) return;
   document.getElementById("sendBtn").disabled = true;
   showUploading();
 
   const form = new FormData();
-  form.append("audio", recordedBlob, "message.webm");
+  let ext = "webm";
+  if (recordedMimeType.includes("mp4")) ext = "mp4";
+  else if (recordedMimeType.includes("ogg")) ext = "ogg";
+  form.append("audio", recordedBlob, `message.${ext}`);
+  form.append("mimeType", recordedMimeType);
 
   try {
     const res = await fetch(`${API}/api/slot/${slotId}/record`, {
@@ -417,19 +432,16 @@ async function sendAudio() {
   }
 }
 
-// ── Timer ─────────────────────────────────────────────────────────────────────
 function startTimer() {
   seconds = 0;
   timerInterval = setInterval(() => {
     seconds++;
     updateTimerDisplay(seconds);
-    if (seconds >= 120) stopRecording(); // 2 min max
+    if (seconds >= 120) stopRecording();
   }, 1000);
 }
 
-function stopTimer() {
-  clearInterval(timerInterval);
-}
+function stopTimer() { clearInterval(timerInterval); }
 
 function updateTimerDisplay(s) {
   const m = Math.floor(s / 60);
@@ -438,10 +450,7 @@ function updateTimerDisplay(s) {
   if (el) el.textContent = `${m}:${ss}`;
 }
 
-// ── Waveform canvas ───────────────────────────────────────────────────────────
-function getCanvas() {
-  return document.getElementById("wave");
-}
+function getCanvas() { return document.getElementById("wave"); }
 
 function idleWave() {
   const cv = getCanvas();
@@ -467,22 +476,6 @@ function setupRecorderWave(stream) {
   analyser.fftSize = 128;
   src.connect(analyser);
   drawLiveWave(analyser, true);
-}
-
-function setupPlayerWave() {
-  idleWave();
-}
-
-function setupPlayerWaveFromElement(audio) {
-  if (!audioCtxPlayer) {
-    audioCtxPlayer = new AudioContext();
-    const src = audioCtxPlayer.createMediaElementSource(audio);
-    analyser = audioCtxPlayer.createAnalyser();
-    analyser.fftSize = 128;
-    src.connect(analyser);
-    analyser.connect(audioCtxPlayer.destination);
-  }
-  drawLiveWave(analyser, false);
 }
 
 function drawLiveWave(analyser, isRec) {
@@ -513,7 +506,6 @@ function drawLiveWave(analyser, isRec) {
   draw();
 }
 
-// ── Icônes SVG inline ─────────────────────────────────────────────────────────
 function iconMic() {
   return `<svg viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm-1 18.93V22h2v-2.07A8 8 0 0 0 20 12h-2a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93z"/></svg>`;
 }
